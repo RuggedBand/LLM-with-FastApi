@@ -231,3 +231,32 @@ async def get_pending_requests_count() -> int:
         raise HTTPException(status_code=500, detail=f"Failed to get pending requests count: {e}")
     finally:
         await conn.close()
+
+async def delete_request_by_id(request_id: str) -> str:
+    conn = await get_db_connection()
+    try:
+        # First, check the current status of the request
+        row = await conn.fetchrow('SELECT status FROM articlesllm WHERE request_id = $1', request_id)
+
+        if not row:
+            raise HTTPException(status_code=404, detail=f"No request found with ID {request_id}.")
+
+        current_status = row['status']
+
+        # Only proceed with deletion if the status is 0 (NOT PROCESSED)
+        if current_status == 0:
+            command_status = await conn.execute('DELETE FROM articlesllm WHERE request_id = $1', request_id)
+            if command_status == 'DELETE 1':
+                return f"Request with ID {request_id} deleted successfully."
+            else:
+                # This case should ideally not be reached if row was found and status was 0
+                raise HTTPException(status_code=500, detail=f"Failed to delete request with ID {request_id} despite status being 0.")
+        else:
+            raise HTTPException(status_code=400, detail=f"Cannot delete request with ID {request_id}. Its status is '{status_map.get(current_status, 'UNKNOWN')}' (only 'NOT PROCESSED' status can be deleted).")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete request: {e}")
+    finally:
+        await conn.close()

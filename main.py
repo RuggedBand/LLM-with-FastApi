@@ -12,7 +12,8 @@ from utils import (
     get_requests_by_user_id,
     get_pending_requests_count,
     get_request_status_only,
-    update_request_if_pending
+    update_request_if_pending,
+    delete_request_by_id
 )
 from worker import run_worker
 from rag_system import RAGSystem
@@ -83,7 +84,10 @@ async def update_request_status(request_id: str,  model: str = Body(default=None
     message = await update_request_if_pending(request_id, model, user_query)
     return {"message": message}
 
-
+@app.delete("/delete-request/{request_id}")
+async def delete_request(request_id: str):
+    message = await delete_request_by_id(request_id)
+    return {"message": message}
 
 @app.on_event("startup")
 async def startup_event():
