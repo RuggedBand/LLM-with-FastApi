@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException,Body
+from fastapi.responses import StreamingResponse
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
@@ -6,6 +7,7 @@ import asyncio
 import os
 from typing import Dict, Any, List
 import uuid
+
 from datetime import datetime
 from utils import (
     insert_request,
@@ -73,11 +75,12 @@ async def get_requests(user_id: str) -> List[Dict[str, Any]]:
 async def get_request_status(request_id: str) ->RequestStatusResponse:
     return await get_request_status_only(request_id)
 
-@app.post("/askllm", response_model=RAGResponse)
+@app.post("/askllm")
 async def ask_llm(query: RAGQuery):
-    print(f"Received query: {query.query}")
-    response = await rag_system.process_query(query.query, query.similarity_threshold)
-    return response
+    async def generate_chunks():
+        async for chunk_data in rag_system.process_query(query.query, query.similarity_threshold):
+            yield chunk_data.encode("utf-8") 
+    return StreamingResponse(generate_chunks(), media_type="application/x-ndjson")
 
 @app.put("/update-request-status/{request_id}")
 async def update_request_status(request_id: str,  model: str = Body(default=None),user_query: str = Body(default=None)):

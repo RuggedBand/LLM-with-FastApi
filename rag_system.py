@@ -1,13 +1,14 @@
-import pandas as pd
 import re
 import html
+import json
+import asyncio
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 from llama_index.core import Document, VectorStoreIndex, Settings, StorageContext, load_index_from_storage
 from llama_index.embeddings.gemini import GeminiEmbedding
 from llama_index.llms.gemini import Gemini
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List ,AsyncGenerator
 from utils import get_posts_from_db_async
 load_dotenv()
 
@@ -97,71 +98,90 @@ class RAGSystem:
         text = ''.join(c for c in text if 32 <= ord(c) <= 126)
         return text.strip()
     
-    async def _get_general_response(self, query: str) -> str:
+    # async def _get_general_response(self, query: str) -> str:
+    async def _get_general_response(self, query: str) -> AsyncGenerator[str, None]:
         try:
             model = genai.GenerativeModel("gemini-1.5-flash")
-            
-            # Use system prompt with the query
             full_prompt = f"{self.system_prompt}\n\nUser Query: {query}"
-            
-            response = await model.generate_content_async(full_prompt)
-            return response.text
+            response_stream = await model.generate_content_async(full_prompt, stream=True) 
+            async for chunk in response_stream:
+                if chunk.text: # Ensure chunk has text content
+                    yield chunk.text
         except Exception as e:
-            print(f"Error getting general response: {e}")
-            return "I'm here to help! Please ask me a question."
+            print(f"Error streaming general response: {e}")
+            yield "I'm here to help! Please ask me a question."
     
-    async def process_query(self, query: str, similarity_threshold: float = 0.7) -> Dict[str, Any]:
+    async def process_query(self, query: str, similarity_threshold: float = 0.7) -> AsyncGenerator[str, None]:
         await self._ensure_initialized()
         
         print(f"Processing query: {query}")
         
         try:
             response = self.query_engine.query(query)
-            
-            if not response.source_nodes:
-                print("No sources found - falling back to general LLM")
-                answer = await self._get_general_response(query)
-                return {
-                    "answer": answer,
-                    "response_type": "general_fallback",
-                    "sources": None
-                }
-            
-            max_score = max([node.score for node in response.source_nodes if hasattr(node, 'score')])
-            print(f"Max similarity score: {max_score}")
-            
-            if max_score < similarity_threshold:
-                print("Similarity below threshold - using general LLM")
-                answer = await self._get_general_response(query)
-                return {
-                    "answer": answer,
-                    "response_type": "general_fallback",
-                    "sources": None
-                }
-            
+            response_type = "rag_with_sources"
             sources = []
-            for i, node in enumerate(response.source_nodes):
-                source_score = getattr(node, 'score', 0.0)
-                if source_score >= similarity_threshold:
-                    sources.append({
-                        "title": node.metadata.get('title', 'N/A'),
-                        "url": node.metadata.get('url', 'N/A'),
-                        "relevance_score": round(source_score, 3),
-                        "text_snippet": node.text[:200] + "..." if len(node.text) > 200 else node.text
-                    })
-            
-            print(f"Found {len(sources)} relevant sources")
-            return {
-                "answer": str(response.response),
-                "response_type": "rag_with_sources",
-                "sources": sources
-            }
-            
+            max_score = 0.0
+
+            if response.source_nodes:
+                max_score = max([node.score for node in response.source_nodes if hasattr(node, 'score')])
+                print(f"Max similarity score: {max_score}")
+
+                if max_score >= similarity_threshold:
+                    for i, node in enumerate(response.source_nodes):
+                        source_score = getattr(node, 'score', 0.0)
+                        if source_score >= similarity_threshold:
+                            sources.append({
+                                "title": node.metadata.get('title', 'N/A'),
+                                "url": node.metadata.get('url', 'N/A'),
+                                "relevance_score": round(source_score, 3),
+                                "text_snippet": node.text[:200] + "..." if len(node.text) > 200 else node.text
+                            })
+                else:
+                    response_type = "general_fallback"
+            else:
+                response_type = "general_fallback"
+
+            # Yield an initial JSON object with metadata (response_type, sources)
+            # This is sent first to the client
+            yield json.dumps({
+                "response_type": response_type,
+                "sources": sources if response_type == "rag_with_sources" else None,
+                "initial_message": "Streaming response...",
+            }) + "\n" # Add newline for JSON streaming (common for SSE or custom protocols)
+
+            # Now stream the actual answer content
+            if response_type == "rag_with_sources":
+                # If using RAG, the 'response.response' is already the full text from LlamaIndex.
+                # To stream it, we manually chunk it. For very long responses, you might
+                # integrate a streaming LLM call *within* LlamaIndex's response synthesis.
+                # For simplicity here, we'll just chunk the already generated text.
+                # A more advanced LlamaIndex setup would involve a streaming LLM in its response builder.
+
+                # Fallback to streaming general response if LlamaIndex's synthesis isn't streaming directly
+                # For the purposes of a simple demo, we'll simulate chunking or directly stream from _get_general_response
+                # if RAG response itself isn't streamable from LlamaIndex directly for complex queries.
+                # For this example, if RAG is triggered, we'll assume response.response is the final answer.
+                # If you want true streaming for LlamaIndex responses, you might need a custom response synthesizer
+                # or ensure the underlying LLM in Settings is set to stream.
+
+                # Since `query_engine.query` returns a full response, we'll stream it character by character
+                # or in small chunks. This is a simulation if LlamaIndex itself isn't streaming the answer.
+                for char in str(response.response):
+                    yield json.dumps({"text_chunk": char}) + "\n" # Yield each character as a chunk
+                    await asyncio.sleep(0.005) # Simulate delay for streaming effect
+            else:
+                # If falling back, use the dedicated general response streamer
+                async for chunk in self._get_general_response(query):
+                    yield json.dumps({"text_chunk": chunk}) + "\n" # Yield each chunk
+
         except Exception as e:
             print(f"Error in RAG processing: {e}")
-            answer = await self._get_general_response(query)
-            return {
-                "answer": answer,
-                "response_type": "error_fallback",
-                "sources": None
-            }
+            # Yield an error message if something goes wrong
+            yield json.dumps({
+                "error": True,
+                "message": f"An error occurred: {e}",
+                "response_type": "error_fallback"
+            }) + "\n"
+            # As a fallback, still try to give a general response if the error was not fatal
+            async for chunk in self._get_general_response(query):
+                 yield json.dumps({"text_chunk": chunk}) + "\n"
