@@ -11,6 +11,9 @@ http://localhost:8000
 
 ---
 
+get "/"
+just for testing
+
 ## 📄 **Queue Article Generation**
 
 **Purpose:**  
