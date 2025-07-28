@@ -55,7 +55,7 @@ async def queue_article_generation(request: ArticleRequest):
     await insert_request(queued_data)
 
     pending_count = await get_pending_requests_count()
-    estimated_time = (pending_count + 1) * REQUEST_PROCESSING_TIME_MINUTES
+    estimated_time = (pending_count + 1)*0.5 + REQUEST_PROCESSING_TIME_MINUTES
 
     return QueuedArticleResponse(
         request_id=request_id,
