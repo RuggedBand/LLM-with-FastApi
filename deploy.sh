@@ -1,13 +1,6 @@
 #!/bin/bash
 
-cd /home/azureuser/aayu_app  # Not fastapi — go to the repo root
-
-echo "==== Directory ===="
-pwd
-echo "==== Git Remote ===="
-git remote -v
-echo "==== Branch ===="
-git branch
+cd /home/azureuser/aayu_app/fastapi 
 
 echo "Pulling latest changes from prod branch..."
 git fetch origin prod
