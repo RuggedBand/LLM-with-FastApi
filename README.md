@@ -11,8 +11,6 @@ http://localhost:8000
 
 ---
 
-get "/"
-just for testing
 
 ## 📄 **Queue Article Generation**
 
@@ -34,6 +32,16 @@ POST /queue-article-generation
 }
 ```
 
+**Sample Response:**
+```
+{
+  "request_id": "<request_id>",
+  "status": "QUEUED",
+  "estimated_completion_time_minutes": <number>,
+  "message": "Your article generation request has been queued. Please note the request_id to check status later."
+}
+```
+
 ---
 
 ## 📄 **Get All Requests for a User**
@@ -43,11 +51,32 @@ Retrieve all article generation requests submitted by a specific user.
 
 **Route:**  
 ```
-GET /get-requests/{user_id}
+POST /get-requests
 ```
 
-**Path Parameter:**  
-- `user_id` (string): The user's ID.
+**Request Body (JSON):**
+```
+{
+  "user_id": "string"
+}
+```
+
+**Sample Response:**
+```
+[
+  {
+    "request_id": "<request_id>",
+    "user_query": "string",
+    "model": "string",
+    "name": "string",
+    "userid": "string",
+    "status": <number>,
+    "timestamp": "<timestamp>",
+    "result": <result or null>
+  },
+  ...
+]
+```
 
 ---
 
@@ -63,6 +92,16 @@ GET /get-request-status/{request_id}
 
 **Path Parameter:**  
 - `request_id` (string): The request's unique ID.
+
+**Sample Response:**
+```
+{
+  "request_id": "<request_id>",
+  "status": "<status>",
+  "result": <result or null>,
+  "message": "<status message>"
+}
+```
 
 ---
 
@@ -82,6 +121,11 @@ POST /askllm
   "query": "string",
   "similarity_threshold": 0.7  // optional, default: 0.7
 }
+```
+
+**Sample Response:**
+```
+<data streamed in NDJSON format>
 ```
 
 ---
@@ -107,6 +151,13 @@ PUT /update-request-status/{request_id}
 }
 ```
 
+**Sample Response:**
+```
+{
+  "message": "<update status message>"
+}
+```
+
 ---
 
 ## 📄 **Delete a Pending Request**
@@ -121,6 +172,13 @@ DELETE /delete-request/{request_id}
 
 **Path Parameter:**  
 - `request_id` (string): The request's unique ID.
+
+**Sample Response:**
+```
+{
+  "message": "<delete status message>"
+}
+```
 
 ---
 
@@ -147,5 +205,4 @@ pip install -r requirements.txt
 ## 🚀 **Run the API**
 
 ```
-uvicorn main:app --reload
-```
+uvicorn

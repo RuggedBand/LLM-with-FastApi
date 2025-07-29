@@ -67,12 +67,15 @@ async def queue_article_generation(request: ArticleRequest):
         message="Your article generation request has been queued. Please note the request_id to check status later."
     )
 
-@app.get("/get-requests/{user_id}")
-async def get_requests(user_id: str) -> List[Dict[str, Any]]:
+@app.post("/get-requests")
+async def get_requests(payload: Dict[str, Any] = Body(...)) -> List[Dict[str, Any]]:
     try:
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="Missing 'user_id' in request body")
         return await get_requests_by_user_id(user_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get requests for user_id {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get requests for user_id: {e}")
 
 @app.get("/get-request-status/{request_id}", response_model=RequestStatusResponse)
 async def get_request_status(request_id: str) ->RequestStatusResponse:
