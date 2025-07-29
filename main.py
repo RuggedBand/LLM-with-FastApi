@@ -35,9 +35,12 @@ worker_lock = asyncio.Lock()
 rag_system = RAGSystem(
     system_prompt=os.getenv("SYSTEMPROMPT_RAG")
 )
+
 @app.get("/")
-async def start():
-    return {"Welcome to the Article Generation Queue API. Use the endpoints to queue article requests and manage them."}
+async def root():
+    return {
+        "message": "Welcome to the Article Generation Queue API. Use this service to queue, track, and manage article generation requests powered by LLM and RAG."
+    }
 
 @app.post("/queue-article-generation", response_model=QueuedArticleResponse)
 async def queue_article_generation(request: ArticleRequest):
