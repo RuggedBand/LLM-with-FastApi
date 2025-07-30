@@ -4,3 +4,4 @@ __pycache__/
 vector_store/
 *.crt
 *.key
+commandshelp.txt
