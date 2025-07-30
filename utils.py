@@ -1,5 +1,4 @@
 import os
-import asyncio
 import asyncpg
 from typing import List, Dict, Any, Optional
 from fastapi import HTTPException
@@ -13,7 +12,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 status_map = { 
-    0: "NOT PROCESSED",
+    0: "QUEUED",
     1: "RUNNING",
     2: "SUCCESS",
     3: "FAILED"
@@ -152,7 +151,7 @@ async def update_request_if_pending(request_id: str, model: Optional[str], user_
             raise HTTPException(status_code=404, detail=f"Request with id {request_id} not found")
 
         if row['status'] != 0:
-            return "Cannot update: Request is not in NOT PROCESSED state."
+            return "Cannot update: Request is already processed/processing."
 
         fields = []
         values = []
@@ -247,7 +246,7 @@ async def delete_request_by_id(request_id: str) -> str:
                 # This case should ideally not be reached if row was found and status was 0
                 raise HTTPException(status_code=500, detail=f"Failed to delete request with ID {request_id} despite status being 0.")
         else:
-            raise HTTPException(status_code=400, detail=f"Cannot delete request with ID {request_id}. Its status is '{status_map.get(current_status, 'UNKNOWN')}' (only 'NOT PROCESSED' status can be deleted).")
+            raise HTTPException(status_code=400, detail=f"Cannot delete request with ID {request_id}. Its status is '{status_map.get(current_status, 'UNKNOWN')}' (only 'QUEUED' status can be deleted).")
 
     except HTTPException:
         raise

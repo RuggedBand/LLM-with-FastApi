@@ -163,10 +163,6 @@ async def _process_single_request(request_data: Dict[str, Any]) -> Dict[str, Any
             processing_result["message"] = "Article(s) generated and posted successfully."
             processing_result["articles"] = llm_response.text
 
-    except genai.APIError as e:
-        processing_result["status"] = 3
-        processing_result["message"] = f"Gemini API Error: {e}"
-        processing_result["error_details"] = str(e)
     except Exception as e:
         processing_result["status"] = 3
         processing_result["message"] = f"An unexpected error occurred during processing: {e}"

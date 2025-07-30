@@ -7,8 +7,8 @@ import asyncio
 import os
 from typing import Dict, Any, List
 import uuid
-
 from datetime import datetime
+import shutil
 from utils import (
     insert_request,
     get_requests_by_user_id,
@@ -22,7 +22,7 @@ from rag_system import RAGSystem
 from models import (ArticleRequest,QueuedArticleResponse,RAGQuery,RAGResponse,RequestStatusResponse)
 load_dotenv()
 
-REQUEST_PROCESSING_TIME_MINUTES = int(os.getenv("REQUEST_PROCESSING_TIME_MINUTES", 2))
+REQUEST_PROCESSING_TIME_MINUTES = float(os.getenv("REQUEST_PROCESSING_TIME_MINUTES", 2))
 WORKER_RUN_INTERVAL_MINUTES = int(os.getenv("WORKER_RUN_INTERVAL_MINUTES", 10))
 
 app = FastAPI(
@@ -46,7 +46,8 @@ async def root():
 async def queue_article_generation(request: ArticleRequest):
     request_id = str(uuid.uuid4())
     timestamp = datetime.now()
-
+    if not request.user_query or request.user_query.strip() == "":
+        raise HTTPException(status_code=400, detail="user_query cannot be empty.")
     queued_data = {
         "request_id": request_id,
         "user_query": request.user_query,
@@ -61,12 +62,23 @@ async def queue_article_generation(request: ArticleRequest):
     await insert_request(queued_data)
 
     pending_count = await get_pending_requests_count()
-    estimated_time = (pending_count + 1)*0.5 + REQUEST_PROCESSING_TIME_MINUTES
+    
+    # Get next run time of the worker
+    next_run = None
+    for job in scheduler.get_jobs():
+        if job.id == "article_generation_worker":
+            next_run = job.next_run_time.replace(tzinfo=None)  # Remove timezone info for comparison
+            break
+
+    # Calculate time until next run
+    current_time = datetime.now()
+    time_until_next_run = (next_run - current_time).total_seconds() / 60 if next_run else WORKER_RUN_INTERVAL_MINUTES
+    estimated_time = time_until_next_run + pending_count * REQUEST_PROCESSING_TIME_MINUTES
 
     return QueuedArticleResponse(
         request_id=request_id,
         status="QUEUED",
-        estimated_completion_time_minutes=estimated_time,
+        estimated_completion_time_minutes=int(estimated_time),
         message="Your article generation request has been queued. Please note the request_id to check status later."
     )
 
@@ -100,6 +112,24 @@ async def update_request_status(request_id: str,  model: str = Body(default=None
 async def delete_request(request_id: str):
     message = await delete_request_by_id(request_id)
     return {"message": message}
+
+@app.post("/reset-vector")
+async def reset_vector(data : Dict[str, Any]= Body(...)):
+    try:
+        password = data.get("password")
+        if password != os.getenv("RESET_VECTOR_PASSWORD"):
+            raise HTTPException(status_code=401, detail="Invalid password for vector reset.")
+        if os.path.exists("./vector_store"):
+            shutil.rmtree("vector_store")
+        else:
+            raise HTTPException(status_code=404, detail="Vector store directory does not exist.")
+        return {"message": "Vector store reset successfully."}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset vector store: {e}")
+            
+
 
 @app.on_event("startup")
 async def startup_event():
