@@ -254,3 +254,28 @@ async def delete_request_by_id(request_id: str) -> str:
         raise HTTPException(status_code=500, detail=f"Failed to delete request: {e}")
     finally:
         await conn.close()
+
+async def requeue_request_by_id(request_id: str) -> str:
+    """
+    Re-queues a request by setting its status to 0, only if it is currently 'FAILED'.
+    """
+    conn = await get_db_connection()
+    try:
+        row = await conn.fetchrow('SELECT status FROM articlesllm WHERE request_id = $1', request_id)
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Request with ID {request_id} not found.")
+
+        current_status = row['status']
+        if current_status == 3:
+            await conn.execute('UPDATE articlesllm SET status = 0 WHERE request_id = $1', request_id)
+            return f"Request {request_id} has been successfully re-queued."
+        else:
+            status_str = status_map.get(current_status, 'UNKNOWN')
+            raise HTTPException(status_code=400, detail=f"Unable to re-queue. Request status is '{status_str}', not 'FAILED'.")
+
+    except HTTPException:
+        raise 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+    finally:
+        await conn.close()

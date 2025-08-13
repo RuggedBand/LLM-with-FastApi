@@ -6,6 +6,8 @@ import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 from llama_index.core import Document, VectorStoreIndex, Settings, StorageContext, load_index_from_storage
+# New import for node parsing (chunking)
+from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.gemini import GeminiEmbedding
 from llama_index.llms.gemini import Gemini
 from typing import Dict, Any, List ,AsyncGenerator
@@ -64,12 +66,19 @@ class RAGSystem:
             asyncio.create_task(self._create_new_index())
     
     async def _create_new_index(self):
-        """Create new vector store and save to disk"""
+        """Create new vector store by chunking documents into nodes and save to disk"""
         print("Loading and preprocessing documents...")
         documents = await self._load_documents()
         
-        print(f"Creating index from {len(documents)} documents...")
-        self.index = VectorStoreIndex.from_documents(documents)
+        # MODIFICATION START: Chunking Logic
+        print("Parsing documents into smaller nodes (chunking)...")
+        parser = SentenceSplitter(chunk_size=256, chunk_overlap=60)
+        nodes = parser.get_nodes_from_documents(documents, show_progress=True)
+        
+        print(f"Creating index from {len(nodes)} nodes...")
+        # Create index from the parsed nodes instead of the original documents
+        self.index = VectorStoreIndex(nodes)
+        # MODIFICATION END
         
         # Save the index to disk
         os.makedirs(self.vector_store_path, exist_ok=True)
@@ -98,14 +107,13 @@ class RAGSystem:
         text = ''.join(c for c in text if 32 <= ord(c) <= 126)
         return text.strip()
     
-    # async def _get_general_response(self, query: str) -> str:
     async def _get_general_response(self, query: str) -> AsyncGenerator[str, None]:
         try:
             model = genai.GenerativeModel("gemini-1.5-flash")
             full_prompt = f"{self.system_prompt}\n\nUser Query: {query}"
             response_stream = await model.generate_content_async(full_prompt, stream=True) 
             async for chunk in response_stream:
-                if chunk.text: # Ensure chunk has text content
+                if chunk.text: 
                     yield chunk.text
         except Exception as e:
             print(f"Error streaming general response: {e}")
@@ -151,21 +159,6 @@ class RAGSystem:
 
             # Now stream the actual answer content
             if response_type == "rag_with_sources":
-                # If using RAG, the 'response.response' is already the full text from LlamaIndex.
-                # To stream it, we manually chunk it. For very long responses, you might
-                # integrate a streaming LLM call *within* LlamaIndex's response synthesis.
-                # For simplicity here, we'll just chunk the already generated text.
-                # A more advanced LlamaIndex setup would involve a streaming LLM in its response builder.
-
-                # Fallback to streaming general response if LlamaIndex's synthesis isn't streaming directly
-                # For the purposes of a simple demo, we'll simulate chunking or directly stream from _get_general_response
-                # if RAG response itself isn't streamable from LlamaIndex directly for complex queries.
-                # For this example, if RAG is triggered, we'll assume response.response is the final answer.
-                # If you want true streaming for LlamaIndex responses, you might need a custom response synthesizer
-                # or ensure the underlying LLM in Settings is set to stream.
-
-                # Since `query_engine.query` returns a full response, we'll stream it character by character
-                # or in small chunks. This is a simulation if LlamaIndex itself isn't streaming the answer.
                 for char in str(response.response):
                     yield json.dumps({"text_chunk": char}) + "\n" # Yield each character as a chunk
                     await asyncio.sleep(0.005) # Simulate delay for streaming effect

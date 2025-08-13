@@ -32,3 +32,4 @@ class RequestStatusResponse(BaseModel):
     request_id: Optional[str] = None
     timestamp: Optional[datetime] = None
     result: Optional[Dict[str, Any]] = None
+    estimated_completion_time_minutes: Optional[int] = None

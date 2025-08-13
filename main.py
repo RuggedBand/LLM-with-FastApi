@@ -15,11 +15,13 @@ from utils import (
     get_pending_requests_count,
     get_request_status_only,
     update_request_if_pending,
-    delete_request_by_id
+    delete_request_by_id,
+    requeue_request_by_id
 )
 from worker import run_worker
 from rag_system import RAGSystem
-from models import (ArticleRequest,QueuedArticleResponse,RAGQuery,RAGResponse,RequestStatusResponse)
+from models import (ArticleRequest,QueuedArticleResponse,RAGQuery,RequestStatusResponse)
+
 load_dotenv()
 
 REQUEST_PROCESSING_TIME_MINUTES = float(os.getenv("REQUEST_PROCESSING_TIME_MINUTES", 2))
@@ -94,7 +96,22 @@ async def get_requests(payload: Dict[str, Any] = Body(...)) -> List[Dict[str, An
 
 @app.get("/get-request-status/{request_id}", response_model=RequestStatusResponse)
 async def get_request_status(request_id: str) ->RequestStatusResponse:
-    return await get_request_status_only(request_id)
+    response = await get_request_status_only(request_id)
+    if response.status == "QUEUED":
+        pending_count = await get_pending_requests_count()
+        
+        next_run = None
+        for job in scheduler.get_jobs():
+            if job.id == "article_generation_worker":
+                next_run = job.next_run_time.replace(tzinfo=None)
+                break
+        
+        current_time = datetime.now()
+        time_until_next_run = (next_run - current_time).total_seconds() / 60 if next_run else WORKER_RUN_INTERVAL_MINUTES
+        estimated_time = time_until_next_run + pending_count * REQUEST_PROCESSING_TIME_MINUTES
+        response.estimated_completion_time_minutes = int(estimated_time)
+        
+    return response
 
 @app.post("/askllm")
 async def ask_llm(query: RAGQuery):
@@ -113,21 +130,45 @@ async def delete_request(request_id: str):
     message = await delete_request_by_id(request_id)
     return {"message": message}
 
+@app.post("/requeue-request/{request_id}")
+async def requeue_request(request_id: str):
+    message = await requeue_request_by_id(request_id)
+    return {"message": message}
+
 @app.post("/reset-vector")
 async def reset_vector(data : Dict[str, Any]= Body(...)):
     try:
         password = data.get("password")
         if password != os.getenv("RESET_VECTOR_PASSWORD"):
             raise HTTPException(status_code=401, detail="Invalid password for vector reset.")
-        if os.path.exists("./vector_store"):
-            shutil.rmtree("vector_store")
+        vector_store_path = rag_system.vector_store_path
+
+        # Delete old vector store if it exists
+        if os.path.exists(vector_store_path):
+            shutil.rmtree(vector_store_path)
+            deleted = True
         else:
-            raise HTTPException(status_code=404, detail="Vector store directory does not exist.")
-        return {"message": "Vector store reset successfully."}
+            deleted = False
+
+        try:
+            rag_system.initialized = False
+            await rag_system.initialize()
+            await rag_system._create_new_index()
+            documents = await rag_system._load_documents()
+            indexed_count = len(documents)
+
+            return {
+                "message": f"Vector store {'reset and rebuilt' if deleted else 'created'} successfully.",
+                "documents_indexed": indexed_count,
+                "status": "success"
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to rebuild vector store: {e}")
+
     except HTTPException as e:
         raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to reset vector store: {e}")
+        raise HTTPException(status_code=500, detail=f"Unhandled error during reset: {e}")
             
 
 

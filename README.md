@@ -1,208 +1,167 @@
 # Article Generation Queue API
 
-This FastAPI application provides endpoints to queue article generation requests, check their status, interact with a RAG (Retrieval-Augmented Generation) system, and manage requests.
+Welcome! This API lets you generate articles using AI, track their status, interact with a Retrieval-Augmented Generation (RAG) system, and manage requests. It’s built with FastAPI and runs in the background, so you can queue requests and check back later for results.
 
 ---
 
-**Base URL (when running locally):**  
-```
-http://localhost:8000
-```
+## 📁 Project Structure & File Roles
+
+- **main.py**: Main FastAPI application. Defines all API endpoints and background scheduling.
+- **worker.py**: Handles background processing of queued article generation requests.
+- **rag_system.py**: Implements the Retrieval-Augmented Generation (RAG) logic and vector store management.
+- **models.py**: Contains all Pydantic models for request and response validation.
+- **utils.py**: Includes all utility functions for database operations and request management.
+- **app.py**: Sample Streamlit frontend for testing purpose.
+- **requirements.txt**: Python dependencies.
+- **sample.env**: Example environment variable file (copy to `.env` and fill in your values).
+- **vector_store/**: Directory for vector store files used by the RAG system.
 
 ---
 
+## 🚀 Quick Start
 
-## 📄 **Queue Article Generation**
+1. **Clone the Repository**
+   ```sh
+   git clone <your-repo-url>
+   cd <repo-folder>
+   ```
 
-**Purpose:**  
-Queue a new article generation request for background processing.
+2. **Set Up Virtual Environment with UV package**
+   ```sh
+   pip install uv 
+   uv venv
+   ```
+3. **Install Requirements**
+   ```sh
+   uv pip install -r requirements.txt
+   ```
 
-**Route:**  
-```
-POST /queue-article-generation
-```
+4. **Set Up Environment Variables**
+   - Copy `sample.env` to `.env` and fill in the required values.
 
-**Request Body (JSON):**
-```
-{
-  "user_query": "string",
-  "model": "string (optional, default: gemini-1.5-flash)",
-  "name": "string",
-  "userid": "string"
-}
-```
+5. **Run the API**
+   ```sh
+   uvicorn main:app --reload
+   ```
+   The API will be available at [http://localhost:8000](http://localhost:8000).
 
-**Sample Response:**
-```
-{
-  "request_id": "<request_id>",
-  "status": "QUEUED",
-  "estimated_completion_time_minutes": <number>,
-  "message": "Your article generation request has been queued. Please note the request_id to check status later."
-}
-```
+6. **(Optional) Run the Sample Frontend**
+   ```sh
+   streamlit run app.py
+   ```
+   This launches a simple web UI for testing purposes.
 
 ---
 
-## 📄 **Get All Requests for a User**
+## 📝 API Endpoints
 
-**Purpose:**  
-Retrieve all article generation requests submitted by a specific user.
-
-**Route:**  
-```
-POST /get-requests
-```
-
-**Request Body (JSON):**
-```
-{
-  "user_id": "string"
-}
-```
-
-**Sample Response:**
-```
-[
+### 1. **Queue Article Generation**
+- **POST** `/queue-article-generation`
+- Queue a new article generation request for background processing.
+- **Request Body:**
+  ```json
   {
-    "request_id": "<request_id>",
-    "user_query": "string",
+    "user_query": "What is AI?",
+    "model": "gemini-1.5-flash",   // optional
+    "name": "John Doe",
+    "userid": "user123"
+  }
+  ```
+- **Response:** Returns a request ID and estimated completion time.
+
+---
+
+### 2. **Get All Requests for a User**
+- **POST** `/get-requests`
+- Retrieve all article generation requests submitted by a specific user.
+- **Request Body:**
+  ```json
+  {
+    "user_id": "user123"
+  }
+  ```
+- **Response:** List of all requests for the user.
+
+---
+
+### 3. **Get Status of a Request**
+- **GET** `/get-request-status/{request_id}`
+- Check the status and result of a specific article generation request.
+- **Response:** Status, result, and estimated completion time.
+
+---
+
+### 4. **Ask LLM (RAG Query)**
+- **POST** `/askllm`
+- Query the RAG system for an answer, optionally using a similarity threshold.
+- **Request Body:**
+  ```json
+  {
+    "query": "What is SRVAAU.com about?",
+    "similarity_threshold": 0.75
+  }
+  ```
+- **Response:** Data streamed in NDJSON format.
+
+---
+
+### 5. **Update Request Status (If Pending)**
+- **PUT** `/update-request-status/{request_id}`
+- Update the model or user query of a pending (not processed) request.
+- **Request Body:**
+  ```json
+  {
     "model": "string",
-    "name": "string",
-    "userid": "string",
-    "status": <number>,
-    "timestamp": "<timestamp>",
-    "result": <result or null>
-  },
-  ...
-]
-```
+    "user_query": "string"
+  }
+  ```
+- **Response:** Update status message.
 
 ---
 
-## 📄 **Get Status of a Request**
-
-**Purpose:**  
-Check the status and result of a specific article generation request.
-
-**Route:**  
-```
-GET /get-request-status/{request_id}
-```
-
-**Path Parameter:**  
-- `request_id` (string): The request's unique ID.
-
-**Sample Response:**
-```
-{
-  "request_id": "<request_id>",
-  "status": "<status>",
-  "result": <result or null>,
-  "message": "<status message>"
-}
-```
+### 6. **Delete a Pending Request**
+- **DELETE** `/delete-request/{request_id}`
+- Delete a request if it is still pending (not processed).
+- **Response:** Delete status message.
 
 ---
 
-## 📄 **Ask LLM (RAG Query)**
-
-**Purpose:**  
-Query the RAG system for an answer, optionally using similarity threshold.
-
-**Route:**  
-```
-POST /askllm
-```
-
-**Request Body (JSON):**
-```
-{
-  "query": "string",
-  "similarity_threshold": 0.7  // optional, default: 0.7
-}
-```
-
-**Sample Response:**
-```
-<data streamed in NDJSON format>
-```
+### 7. **Requeue a Failed Request**
+- **POST** `/requeue-request/{request_id}`
+- Re-queue a request that previously failed.
+- **Response:** Requeue status message.
 
 ---
 
-## 📄 **Update Request Status (If Pending)**
-
-**Purpose:**  
-Update the model or user query of a pending (not processed) request.
-
-**Route:**  
-```
-PUT /update-request-status/{request_id}
-```
-
-**Path Parameter:**  
-- `request_id` (string): The request's unique ID.
-
-**Request Body (JSON):**
-```
-{
-  "model": "string (optional)",
-  "user_query": "string (optional)"
-}
-```
-
-**Sample Response:**
-```
-{
-  "message": "<update status message>"
-}
-```
+### 8. **Reset Vector Store**
+- **POST** `/reset-vector`
+- Reset and rebuild the RAG vector store (admin only, requires password).
+- **Request Body:**
+  ```json
+  {
+    "password": "your_admin_password"
+  }
+  ```
+- **Response:** Status and number of documents indexed.
 
 ---
 
-## 📄 **Delete a Pending Request**
-
-**Purpose:**  
-Delete a request if it is still pending (not processed).
-
-**Route:**  
-```
-DELETE /delete-request/{request_id}
-```
-
-**Path Parameter:**  
-- `request_id` (string): The request's unique ID.
-
-**Sample Response:**
-```
-{
-  "message": "<delete status message>"
-}
-```
-
----
-
-## 🛠️ **Background Worker**
+## ⚙️ Background Worker
 
 - The background worker runs every `WORKER_RUN_INTERVAL_MINUTES` (default: 10 minutes) to process queued article generation requests.
 
 ---
 
-## 📝 **Environment Variables**
+## 🔑 Environment Variables
 
-See [`sample.env`](sample.env) for required environment variables.
-
----
-
-## 📦 **Install Requirements**
-
-```
-pip install -r requirements.txt
-```
+See [sample.env](sample.env) for all required settings (API keys, database URL, etc.).
 
 ---
 
-## 🚀 **Run the API**
+## 🆘 Need Help?
 
-```
-uvicorn
+- Make sure your database is set up and accessible.
+- Check your `.env` file for missing or incorrect values.
+- For more details, see the comments in each Python file.
+
+---
