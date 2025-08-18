@@ -46,8 +46,9 @@ class RAGSystem:
         
         # Setup query engine
         self.query_engine = self.index.as_query_engine(
-            similarity_top_k=3,
-            response_mode="compact"
+            similarity_top_k=10,
+            response_mode="compact",
+            streaming=True
         )
         
         self.initialized = True
@@ -157,7 +158,7 @@ class RAGSystem:
 
             # Now stream the actual answer content
             if response_type == "rag_with_sources":
-                for word in response.response.split():
+                for word in response.response_gen:
                     yield json.dumps({"text_chunk": word + ' '}) + "\n"
                     await asyncio.sleep(0.005) # Increased sleep time for better effect
             else:
