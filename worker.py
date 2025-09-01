@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 from dotenv import load_dotenv
 import json
-from utils import get_pending_requests, update_request_status
+from utils import get_pending_requests, update_request_status, update_request_posts
 
 load_dotenv()
 
@@ -73,6 +73,8 @@ async def _process_single_request(request_data: Dict[str, Any]) -> Dict[str, Any
         "error_details": None
     }
 
+    posts_collected = []  # <-- new, holds {"id": ..., "title": ...}
+
     try:
         model = genai.GenerativeModel(
             model_name=model_name,
@@ -84,7 +86,6 @@ async def _process_single_request(request_data: Dict[str, Any]) -> Dict[str, Any
         raw_html_content = llm_response.text
 
         article_blocks = re.findall(r'<article>(.*?)</article>', raw_html_content, re.DOTALL)
-        
         if not article_blocks and raw_html_content.strip():
             article_blocks = [raw_html_content]
 
@@ -148,6 +149,13 @@ async def _process_single_request(request_data: Dict[str, Any]) -> Dict[str, Any
                 except Exception as e:
                     post_api_response = {"error": f"Unexpected API call error: {str(e)}"}
             
+            # 🔹 Collect post_id + title if present
+            if post_api_response.get("data") and post_api_response["data"].get("id"):
+                posts_collected.append({
+                    "id": post_api_response["data"]["id"],
+                    "title": post_api_response["data"]["title"]
+                })
+            
             generated_articles.append({
                 "article_title": title,
                 "article_content_snippet": content_without_h1[:200] + "...",
@@ -162,6 +170,10 @@ async def _process_single_request(request_data: Dict[str, Any]) -> Dict[str, Any
             processing_result["status"] = 2
             processing_result["message"] = "Article(s) generated and posted successfully."
             processing_result["articles"] = llm_response.text
+
+        # 🔹 Save posts to DB if any collected
+        if posts_collected:
+            await update_request_posts(request_id, posts_collected)
 
     except Exception as e:
         processing_result["status"] = 3

@@ -200,6 +200,20 @@ async def update_request_status(request_id: str, status: int, result: Optional[D
     finally:
         await conn.close()
 
+async def update_request_posts(request_id: str, posts: list):
+    conn = await get_db_connection()
+    try:
+        await conn.execute('''
+            UPDATE articlesllm
+            SET posts = $1
+            WHERE request_id = $2
+        ''', json.dumps(posts), request_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update posts: {e}")
+    finally:
+        await conn.close()
+
+
 async def get_pending_requests() -> List[Dict[str, Any]]:
     conn = await get_db_connection()
     try:
