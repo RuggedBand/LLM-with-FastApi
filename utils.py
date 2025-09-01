@@ -115,27 +115,42 @@ async def get_request_status_only(request_id: str) -> RequestStatusResponse:
 
 async def get_requests_by_user_id(user_id: str) -> List[Dict[str, Any]]:
     conn = await get_db_connection()
-    
     try:
         query = 'SELECT * FROM articlesllm WHERE userid = $1 ORDER BY timestamp DESC'
         rows = await conn.fetch(query, user_id)
         requests = []
         for row in rows:
             request_dict = dict(row)
+
             if request_dict.get('timestamp'):
                 request_dict['timestamp'] = request_dict['timestamp'].isoformat()
 
             status_code = request_dict.get('status')
             if status_code in status_map:
                 request_dict['status'] = status_map[status_code]
-
             if request_dict.get('result'):
                 try:
-                    request_dict['result'] = json.loads(request_dict['result'])
-                except Exception as e:
-                    request_dict['result'] = {"error": "Failed to decode result JSON", "raw": request_dict['result']}
-            
+                    result_data = json.loads(request_dict['result'])
+                    result_data.pop("articles", None)
+
+                    if not result_data.get("error_details"):
+                        result_data.pop("error_details", None)
+
+                    request_dict['result'] = result_data
+                except Exception:
+                    request_dict['result'] = {
+                        "error": "Failed to decode result JSON",
+                        "raw": request_dict['result'],
+                    }
+
+            if request_dict.get('posts'):
+                try:
+                    request_dict['posts'] = json.loads(request_dict['posts'])
+                except Exception:
+                    request_dict['posts'] = {"error": "Failed to decode posts JSON", "raw": request_dict['posts']}
+
             requests.append(request_dict)
+
         return requests
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch requests for user_id: {e}")
