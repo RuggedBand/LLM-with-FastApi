@@ -165,8 +165,3 @@ See [sample.env](sample.env) for all required settings (API keys, database URL, 
 - For more details, see the comments in each Python file.
 
 ---
-
-
-test branch change
-some more testing 
-new branch visual testing 
