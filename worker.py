@@ -63,7 +63,7 @@ async def get_auth_token() -> str:
 async def _process_single_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
     request_id = request_data["request_id"]
     user_query = request_data["user_query"]
-    model_name = request_data.get("model", "gemini-1.5-flash")
+    model_name = request_data.get("model", "gemini-2.5-flash")
     name = request_data["name"]
     
     processing_result = {
